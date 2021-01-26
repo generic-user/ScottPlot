@@ -1,40 +1,49 @@
 # ScottPlot
 
-[![](https://img.shields.io/azure-devops/build/swharden/swharden/2?label=Build&logo=azure%20pipelines)](https://dev.azure.com/swharden/swharden/_build/latest?definitionId=2&branchName=master)
+[![](https://img.shields.io/azure-devops/build/swharden/ScottPlot/15?label=Build&logo=azure%20pipelines)](https://dev.azure.com/swharden/ScottPlot/_build?definitionId=15)
+[![](https://img.shields.io/azure-devops/tests/swharden/ScottPlot/15?label=Tests&logo=azure%20pipelines)](https://dev.azure.com/swharden/ScottPlot/_build?definitionId=15)
 [![](https://img.shields.io/nuget/dt/ScottPlot?color=004880&label=Installs&logo=nuget)](https://www.nuget.org/packages/ScottPlot/)
-[![Nuget](https://img.shields.io/nuget/v/scottplot?label=NuGet&logo=nuget)](https://www.nuget.org/packages/ScottPlot/)
+[![](https://img.shields.io/nuget/v/scottplot?label=NuGet&logo=nuget)](https://www.nuget.org/packages/ScottPlot/)
 
-**ScottPlot is a free and open-source plotting library for .NET** that makes it easy to interactively display large datasets. The [ScottPlot Cookbook](https://swharden.com/scottplot/cookbook) demonstrates how to create line plots, bar charts, pie graphs, scatter plots, and more with just a few lines of code.
-
-* **[ScottPlot Demo](https://swharden.com/scottplot/demo)** 👈 _See what ScottPlot can do_
+**ScottPlot is a free and open-source plotting library for .NET** that makes it easy to interactively display large datasets. The [**ScottPlot Cookbook**](https://swharden.com/scottplot/cookbook) demonstrates how to create line plots, bar charts, pie graphs, scatter plots, and more with just a few lines of code.
 
 * **[ScottPlot Cookbook](https://swharden.com/scottplot/cookbook)** 👈 _Learn how to use ScottPlot_
 
+* **[ScottPlot Demo](https://swharden.com/scottplot/demo)** 👈 _See what ScottPlot can do_
+
+* **Quickstart:** [WinForms](https://swharden.com/scottplot/quickstart#windows-forms-quickstart), [WPF](https://swharden.com/scottplot/quickstart#wpf-quickstart), [Avalonia](https://swharden.com/scottplot/quickstart#avalonia-quickstart), [Console](https://swharden.com/scottplot/quickstart#console-quickstart)
+
 <div align='center'>
-<img src='dev/nuget/ScottPlot.gif'>
+
+<a href='https://swharden.com/scottplot'><img src='dev/graphics/ScottPlot.gif'></a>
+
+<a href='https://swharden.com/scottplot/cookbook'><img src='dev/graphics/cookbook.jpg'></a>
+
 </div>
 
-### Quickstart
+### Questions and Feedback
 
-* [Windows Forms](https://swharden.com/scottplot/quickstart#windows-forms-quickstart)
-* [WPF](https://swharden.com/scottplot/quickstart#wpf-quickstart)
-* [Avalonia](https://swharden.com/scottplot/quickstart#avalonia-quickstart)
-* [Console Application](https://swharden.com/scottplot/quickstart#console-quickstart)
+* **Ask questions** in [Discussions](https://github.com/swharden/ScottPlot/discussions/categories/q-a), [Issues](https://github.com/swharden/ScottPlot/issues), or [on StackOverflow]((https://stackoverflow.com/questions/ask?tags=scottplot))
 
-### Supported Platforms
+* [**Create an issue**](https://github.com/swharden/ScottPlot/issues) for a feature suggestion or bug report
 
-* .NET Core 2.0 and newer
-* .NET Framework 4.6.1 and newer
+* If you enjoy ScottPlot **give us a star!** ⭐
 
-### Miscellaneous
+### Major Versions
 
-* **If you enjoy ScottPlot, give us a star! ⭐**
+* See [**Releases**](https://github.com/swharden/ScottPlot/releases) for source code and notes for all versions
 
-* **New features** are listed on the [releases](https://github.com/swharden/ScottPlot/releases) page
+* **`ScottPlot 4.1`** is being actively-developed and is currently available as a pre-release package on NuGet. This version is faster than 4.0, supports multiple axes, and has a simpler API and a better cookbook.
+
+* **`ScottPlot 4.0`** is stable, available on NuGet, and has its own [branch](https://github.com/swharden/ScottPlot/branches) for continued bug fixes and refinements. However, new features are no longer being developed for this version.
+
+### Developer Notes
+
+* **Minimum Supported Platforms:** .NET Core 2.0 and .NET Framework 4.6.1 ([see details](https://swharden.com/scottplot/#supported-platforms))
+
+* **The [ScottPlot Roadmap](dev/roadmap.md)** summarizes ScottPlot's origins and tracks development goals
 
 * **Contributions are welcome!** See [contributing.md](CONTRIBUTING.md) to get started
-
-* **Build ScottPlot from source** with notes in [src/readme.md](src)
 
 ### About ScottPlot
 

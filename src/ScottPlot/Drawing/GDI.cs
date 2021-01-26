@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -15,36 +18,44 @@ namespace ScottPlot.Drawing
         private const float xMultiplierMacOS = 82.82f / 72;
         private const float yMultiplierMacOS = 27.16f / 20;
 
-        public static System.Drawing.SizeF MeasureString(System.Drawing.Graphics gfx, string text, string fontName, double fontSize, bool bold = false)
+        public static SizeF MeasureString(string text, Font font)
         {
-            if (gfx is null)
-                throw new ArgumentException("a valid Graphics object is required");
-
-            var unit = System.Drawing.GraphicsUnit.Pixel;
-            var fontStyle = (bold) ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
-            using (var font = new System.Drawing.Font(fontName, (float)fontSize, fontStyle, unit))
+            using (Bitmap bmp = new Bitmap(1, 1))
+            using (Graphics gfx = Graphics(bmp, lowQuality: true))
             {
-                System.Drawing.SizeF size = gfx.MeasureString(text, font);
-
-                // compensate for OS-specific differences in font scaling
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    size.Width *= xMultiplierLinux;
-                    size.Height *= yMultiplierLinux;
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    size.Width *= xMultiplierMacOS;
-                    size.Height *= yMultiplierMacOS;
-                }
-
-                return size;
+                return MeasureString(gfx, text, font.Name, font.Size, font.Bold);
             }
         }
 
-        public static System.Drawing.SizeF MeasureString(System.Drawing.Graphics gfx, string text, System.Drawing.Font font)
+        public static SizeF MeasureString(Graphics gfx, string text, string fontName, double fontSize, bool bold = false)
         {
-            return MeasureString(gfx, text, font.Name, font.Size, font.Style == System.Drawing.FontStyle.Bold);
+            var fontStyle = (bold) ? FontStyle.Bold : FontStyle.Regular;
+            using (var font = new System.Drawing.Font(fontName, (float)fontSize, fontStyle, GraphicsUnit.Pixel))
+            {
+                return MeasureString(gfx, text, font);
+            }
+        }
+
+        public static SizeF MeasureString(Graphics gfx, string text, System.Drawing.Font font)
+        {
+            SizeF size = gfx.MeasureString(text, font);
+
+            // compensate for OS-specific differences in font scaling
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                size.Width *= xMultiplierLinux;
+                size.Height *= yMultiplierLinux;
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                size.Width *= xMultiplierMacOS;
+                size.Height *= yMultiplierMacOS;
+            }
+
+            // ensure the measured height is at least the font size
+            size.Height = Math.Max(font.Size, size.Height);
+
+            return size;
         }
 
         public static System.Drawing.Color Mix(System.Drawing.Color colorA, System.Drawing.Color colorB, double fracA)
@@ -60,6 +71,22 @@ namespace ScottPlot.Drawing
             var colorA = System.Drawing.ColorTranslator.FromHtml(hexA);
             var colorB = System.Drawing.ColorTranslator.FromHtml(hexB);
             return Mix(colorA, colorB, fracA);
+        }
+
+        public static System.Drawing.Graphics Graphics(Bitmap bmp, bool lowQuality = false)
+        {
+            Graphics gfx = System.Drawing.Graphics.FromImage(bmp);
+            gfx.SmoothingMode = lowQuality ? SmoothingMode.HighSpeed : SmoothingMode.AntiAlias;
+            gfx.TextRenderingHint = lowQuality ? TextRenderingHint.SingleBitPerPixelGridFit : TextRenderingHint.AntiAliasGridFit;
+            return gfx;
+        }
+
+        public static System.Drawing.Graphics Graphics(Bitmap bmp, PlotDimensions dims, bool lowQuality = false, bool clipToDataArea = true)
+        {
+            Graphics gfx = Graphics(bmp, lowQuality);
+            if (clipToDataArea)
+                gfx.Clip = new Region(new RectangleF(dims.DataOffsetX, dims.DataOffsetY, dims.DataWidth, dims.DataHeight));
+            return gfx;
         }
 
         public static System.Drawing.Pen Pen(System.Drawing.Color color, double width = 1, LineStyle lineStyle = LineStyle.Solid, bool rounded = false)
@@ -98,6 +125,26 @@ namespace ScottPlot.Drawing
             return pen;
         }
 
+        public static Brush Brush(Color color, double alpha) => new SolidBrush(Color.FromArgb((byte)(255 * alpha), color));
+
+        public static Brush Brush(Color color, Color? hatchColor = null, HatchStyle hatchStyle = HatchStyle.None)
+        {
+            bool isHatched = hatchStyle != HatchStyle.None;
+
+            if (isHatched)
+            {
+                if (hatchColor is null)
+                    throw new ArgumentException("hatch color must be defined if hatch style is used");
+                else
+                    return new HatchBrush(ConvertToSDHatchStyle(hatchStyle).Value, hatchColor.Value, color);
+            }
+            else
+            {
+                return new SolidBrush(color);
+            }
+        }
+
+        [Obsolete("use Brush()", true)]
         public static System.Drawing.Brush HatchBrush(HatchStyle pattern, Color fillColor, Color hatchColor)
         {
             if (pattern == HatchStyle.None)
@@ -136,11 +183,57 @@ namespace ScottPlot.Drawing
             }
         }
 
-        public static System.Drawing.Font Font(string fontName, float fontSize, bool bold = false)
+        public static System.Drawing.Font Font(ScottPlot.Drawing.Font font) =>
+            Font(font.Name, font.Size, font.Bold);
+
+        public static System.Drawing.Font Font(string fontName = null, float fontSize = 12, bool bold = false)
         {
-            string validFontName = Config.Fonts.GetValidFontName(fontName);
+            string validFontName = InstalledFont.ValidFontName(fontName);
             FontStyle fontStyle = bold ? FontStyle.Bold : FontStyle.Regular;
-            return new Font(validFontName, fontSize, fontStyle, GraphicsUnit.Pixel);
+            return new System.Drawing.Font(validFontName, fontSize, fontStyle, GraphicsUnit.Pixel);
+        }
+
+        public static StringFormat StringFormat(HorizontalAlignment h = HorizontalAlignment.Left, VerticalAlignment v = VerticalAlignment.Lower)
+        {
+            var sf = new StringFormat();
+
+            if (h == HorizontalAlignment.Left)
+                sf.Alignment = StringAlignment.Near;
+            else if (h == HorizontalAlignment.Center)
+                sf.Alignment = StringAlignment.Center;
+            else if (h == HorizontalAlignment.Right)
+                sf.Alignment = StringAlignment.Far;
+            else
+                throw new NotImplementedException();
+
+            if (v == VerticalAlignment.Upper)
+                sf.LineAlignment = StringAlignment.Near;
+            else if (v == VerticalAlignment.Middle)
+                sf.LineAlignment = StringAlignment.Center;
+            else if (v == VerticalAlignment.Lower)
+                sf.LineAlignment = StringAlignment.Far;
+
+            return sf;
+        }
+
+        public static Bitmap Resize(Image bmp, int width, int height)
+        {
+            var bmp2 = new Bitmap(width, height);
+            var rect = new Rectangle(0, 0, width, height);
+
+            using (var gfx = System.Drawing.Graphics.FromImage(bmp2))
+            using (var attribs = new ImageAttributes())
+            {
+                gfx.CompositingMode = CompositingMode.SourceCopy;
+                gfx.CompositingQuality = CompositingQuality.HighQuality;
+                gfx.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                gfx.SmoothingMode = SmoothingMode.HighQuality;
+                gfx.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                attribs.SetWrapMode(WrapMode.TileFlipXY);
+                gfx.DrawImage(bmp, rect, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, attribs);
+            }
+
+            return bmp2;
         }
     }
 }

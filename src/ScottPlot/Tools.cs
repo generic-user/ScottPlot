@@ -35,6 +35,7 @@ namespace ScottPlot
             return Color.FromArgb(r, g, b);
         }
 
+        [Obsolete("use ScottPlot.Plot.Version", true)]
         public static string GetVersionString(bool justThreeDigits = true)
         {
             Version ver = typeof(Plot).Assembly.GetName().Version;
@@ -120,8 +121,8 @@ namespace ScottPlot
             double[] dataSin = ScottPlot.DataGen.Sin(pointCount);
             double[] dataCos = ScottPlot.DataGen.Cos(pointCount);
 
-            plt.PlotScatter(dataXs, dataSin);
-            plt.PlotScatter(dataXs, dataCos);
+            plt.AddScatter(dataXs, dataSin);
+            plt.AddScatter(dataXs, dataCos);
             plt.AxisAuto(0);
             plt.Title("ScottPlot User Control");
             plt.YLabel("Sample Data");
@@ -133,66 +134,6 @@ namespace ScottPlot
             for (int i = 0; i < positions.Length; i++)
                 positions[i] = dateTimeArray[i].ToOADate();
             return positions;
-        }
-
-        [Obsolete]
-        public static Bitmap DesignerModeBitmap(Size size, bool drawArrows = false)
-        {
-            Bitmap bmp = new Bitmap(size.Width, size.Height);
-
-            Graphics gfx = Graphics.FromImage(bmp);
-            gfx.Clear(ColorTranslator.FromHtml("#003366"));
-            Brush brushLogo = new SolidBrush(ColorTranslator.FromHtml("#FFFFFF"));
-            Brush brushMeasurements = new SolidBrush(ColorTranslator.FromHtml("#006699"));
-            Pen pen = new Pen(ColorTranslator.FromHtml("#006699"), 3);
-            pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-            pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-            float arrowSize = 7;
-            float padding = 3;
-
-            // logo
-            FontFamily ff = new FontFamily(Config.Fonts.GetDefaultFontName());
-            gfx.DrawString("ScottPlot", new Font(ff, 24, FontStyle.Bold), brushLogo, 10, 10);
-            var titleSize = Drawing.GDI.MeasureString(gfx, "ScottPlot", new Font(ff, 24, FontStyle.Bold));
-            gfx.DrawString($"version {GetVersionString()}", new Font(ff, 12, FontStyle.Italic), brushLogo, 12, (int)(10 + titleSize.Height * .7));
-
-            if (drawArrows)
-            {
-                // horizontal arrow
-                PointF left = new PointF(padding, size.Height / 2);
-                PointF leftA = new PointF(left.X + arrowSize, left.Y + arrowSize);
-                PointF leftB = new PointF(left.X + arrowSize, left.Y - arrowSize);
-                PointF right = new PointF(size.Width - padding, size.Height / 2);
-                PointF rightA = new PointF(right.X - arrowSize, right.Y + arrowSize);
-                PointF rightB = new PointF(right.X - arrowSize, right.Y - arrowSize);
-                gfx.DrawLine(pen, left, right);
-                gfx.DrawLine(pen, left, leftA);
-                gfx.DrawLine(pen, left, leftB);
-                gfx.DrawLine(pen, right, rightA);
-                gfx.DrawLine(pen, right, rightB);
-                gfx.DrawString($"{size.Width}px",
-                    new Font(ff, 12, FontStyle.Bold), brushMeasurements,
-                    (float)(size.Width * .2), (float)(size.Height * .5));
-
-                // vertical arrow
-                PointF top = new PointF(size.Width / 2, padding);
-                PointF topA = new PointF(top.X - arrowSize, top.Y + arrowSize);
-                PointF topB = new PointF(top.X + arrowSize, top.Y + arrowSize);
-                PointF bot = new PointF(size.Width / 2, size.Height - padding);
-                PointF botA = new PointF(bot.X - arrowSize, bot.Y - arrowSize);
-                PointF botB = new PointF(bot.X + arrowSize, bot.Y - arrowSize);
-                gfx.DrawLine(pen, top, bot);
-                gfx.DrawLine(pen, bot, botA);
-                gfx.DrawLine(pen, bot, botB);
-                gfx.DrawLine(pen, top, topA);
-                gfx.DrawLine(pen, top, topB);
-                gfx.RotateTransform(-90);
-                gfx.DrawString($"{size.Height}px",
-                    new Font(ff, 12, FontStyle.Bold), brushMeasurements,
-                    (float)(-size.Height * .4), (float)(size.Width * .5));
-            }
-
-            return bmp;
         }
 
         private static double[] DoubleArray<T>(T[] dataIn)
@@ -332,12 +273,6 @@ namespace ScottPlot
             return hash;
         }
 
-        public enum IntensityMode
-        {
-            gaussian,
-            density
-        }
-
         public static double[,] XYToIntensities(IntensityMode mode, int[] xs, int[] ys, int width, int height, int sampleWidth)
         {
             double NormPDF(double x, double mu, double sigma)
@@ -346,24 +281,63 @@ namespace ScottPlot
             }
 
             double[,] output = new double[height, width];
-            if (mode == IntensityMode.gaussian)
+            if (mode == IntensityMode.Gaussian)
             {
+                double[,] intermediate = new double[height, width];
+                int radius = 2; // 2 Standard deviations is ~0.95, i.e. close enough
                 for (int i = 0; i < xs.Length; i++)
                 {
-
-                    for (int j = -2 * sampleWidth; j < 2 * sampleWidth; j++) // 2 Standard deviations is ~0.95, i.e. close enough
+                    if (xs[i] >= 0 && xs[i] < width && ys[i] >= 0 && ys[i] < height)
                     {
-                        for (int k = -2 * sampleWidth; k < 2 * sampleWidth; k++)
+                        intermediate[ys[i], xs[i]] += 1;
+                    }
+                }
+
+                double[] kernel = new double[2 * radius * sampleWidth + 1];
+                for (int i = 0; i < kernel.Length; i++)
+                {
+                    kernel[i] = NormPDF(i - kernel.Length / 2, 0, sampleWidth);
+                }
+
+                for (int i = 0; i < height; i++)
+                {
+                    for (int j = 0; j < width; j++)
+                    {
+                        double sum = 0;
+                        double kernelSum = 0; // The kernelSum can be precomputed, but this gives incorrect output at the edges of the image
+                        for (int k = -radius * sampleWidth; k <= radius * sampleWidth; k++)
                         {
-                            if (xs[i] + j > 0 && xs[i] + j < width && ys[i] + k > 0 && ys[i] + k < height)
+                            if (i + k >= 0 && i + k < height)
                             {
-                                output[ys[i] + k, xs[i] + j] += NormPDF(Math.Sqrt(j * j + k * k), 0, sampleWidth);
+                                sum += intermediate[i + k, j] * kernel[k + kernel.Length / 2];
+                                kernelSum += kernel[k + kernel.Length / 2];
                             }
                         }
+
+                        output[i, j] = sum / kernelSum;
+                    }
+                }
+
+                for (int i = 0; i < height; i++)
+                {
+                    for (int j = 0; j < width; j++)
+                    {
+                        double sum = 0;
+                        double kernelSum = 0;
+                        for (int k = -radius * sampleWidth; k <= radius * sampleWidth; k++)
+                        {
+                            if (j + k >= 0 && j + k < width)
+                            {
+                                sum += output[i, j + k] * kernel[k + kernel.Length / 2];
+                                kernelSum += kernel[k + kernel.Length / 2];
+                            }
+                        }
+
+                        output[i, j] = sum / kernelSum;
                     }
                 }
             }
-            else if (mode == IntensityMode.density)
+            else if (mode == IntensityMode.Density)
             {
                 (int x, int y)[] points = xs.Zip(ys, (x, y) => (x, y)).ToArray();
                 points = points.OrderBy(p => p.x).ToArray();
@@ -418,7 +392,7 @@ namespace ScottPlot
             }
 
             char[] symbols = "0123456789ABCDEF".ToCharArray();
-            if (radix > symbols.Length)
+            if (radix > symbols.Length || radix <= 1)
             {
                 throw new ArgumentOutOfRangeException(nameof(radix));
             }
@@ -437,7 +411,14 @@ namespace ScottPlot
 
             for (int i = 0; i < integerLength; i++)
             {
-                output = symbols[(int)(number % radix)] + output;
+                if (number == radix && padInteger == 0)
+                {
+                    output = "10" + output;
+                }
+                else
+                {
+                    output = symbols[(int)(number % radix)] + output;
+                }
                 number /= radix;
             }
 
@@ -448,6 +429,10 @@ namespace ScottPlot
 
             if (decimalLength != 0)
             {
+                if (output == "")
+                {
+                    output += "0";
+                }
                 output += ".";
                 output += ToDifferentBase(Math.Round(decimalPart * Math.Pow(radix, decimalPlaces)), radix, decimalPlaces, decimalPlaces);
                 if (dropTrailingZeroes)

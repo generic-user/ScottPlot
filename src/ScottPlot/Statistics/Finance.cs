@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace ScottPlot.Statistics
@@ -10,7 +11,7 @@ namespace ScottPlot.Statistics
         /// Simple moving average
         /// </summary>
         /// <param name="period">number of values to use for each calculation</param>
-        public static double[] SMA(double[] values, int period)
+        public static double[] SMA(double[] values, int period, bool trimNan = true)
         {
             if (period < 2)
                 throw new ArgumentException("period must be 2 or greater");
@@ -30,11 +31,12 @@ namespace ScottPlot.Statistics
                     // TODO: could optimize this for perforance by not copying
                     // to do this create a Common.Mean overload
                     var periodValues = new double[period];
-                    Array.Copy(values, i - period, periodValues, 0, period);
+                    Array.Copy(values, i - period + 1, periodValues, 0, period);
                     sma[i] = Common.Mean(periodValues);
                 }
             }
-            return sma;
+
+            return trimNan ? sma.Skip(period).ToArray() : sma;
         }
 
         /// <summary>
@@ -60,7 +62,7 @@ namespace ScottPlot.Statistics
                 else
                 {
                     var periodValues = new double[period];
-                    Array.Copy(values, i - period, periodValues, 0, period);
+                    Array.Copy(values, i - period + 1, periodValues, 0, period);
                     stDev[i] = Common.StDev(periodValues);
                 }
             }
@@ -84,9 +86,9 @@ namespace ScottPlot.Statistics
         /// </summary>
         /// <param name="period">number of OHLCs to use for each calculation</param>
         /// <param name="multiplier">number of standard deviations from the mean</param>
-        public static (double[] sma, double[] lower, double[] upper) Bollinger(double[] values, int period = 20, double multiplier = 2)
+        public static (double[] sma, double[] lower, double[] upper) Bollinger(double[] values, int period, double multiplier = 2)
         {
-            double[] sma = SMA(values, period);
+            double[] sma = SMA(values, period, trimNan: false);
             double[] smstd = SMStDev(values, period);
 
             double[] bolU = new double[values.Length];
@@ -105,12 +107,19 @@ namespace ScottPlot.Statistics
         /// </summary>
         /// <param name="period">number of OHLCs to use for each calculation</param>
         /// <param name="multiplier">number of standard deviations from the mean</param>
-        public static (double[] sma, double[] lower, double[] upper) Bollinger(OHLC[] ohlcs, int period = 20, double multiplier = 2)
+        public static (double[] sma, double[] lower, double[] upper) Bollinger(OHLC[] ohlcs, int period, double multiplier = 2)
         {
             double[] closingPrices = new double[ohlcs.Length];
             for (int i = 0; i < ohlcs.Length; i++)
                 closingPrices[i] = ohlcs[i].close;
-            return Bollinger(closingPrices, period, multiplier);
+            var (sma, lower, upper) = Bollinger(closingPrices, period, multiplier);
+
+            // skip the first points which all contain NaN
+            sma = sma.Skip(period).ToArray();
+            lower = lower.Skip(period).ToArray();
+            upper = upper.Skip(period).ToArray();
+
+            return (sma, lower, upper);
         }
     }
 }

@@ -1,236 +1,236 @@
-﻿/* The Plot class is the primary public interface for ScottPlot.
- * State (plottables and configuration) is stored in the settings object 
- * which is private so it can be refactored without breaking the API.
- * 
- * Helper methods for styling and plottable creation are in partial class
- * files in the Plot folder.
- */
-
+﻿using ScottPlot.Plottable;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
-using System.Drawing.Text;
 using System.Linq;
 
 namespace ScottPlot
 {
     public partial class Plot
     {
-        private readonly Settings settings;
+        /// <summary>
+        /// The settings object stores all state (configuration and data) for a plot
+        /// </summary>
+        private readonly Settings settings = new Settings();
 
+        /// <summary>
+        /// A ScottPlot stores data in plottable objects and draws it on a bitmap when Render() is called
+        /// </summary>
         public Plot(int width = 800, int height = 600)
         {
             if (width <= 0 || height <= 0)
                 throw new ArgumentException("width and height must each be greater than 0");
-            settings = new Settings();
+
             StyleTools.SetStyle(this, ScottPlot.Style.Default);
-            Resize(width, height);
-            TightenLayout();
+            SetSize(width, height);
         }
 
-        public override string ToString()
-        {
-            return string.Format($"ScottPlot ({0:n0} x {1:n0}) with {2:n0} objects ({3:n0} points)",
-                settings.figureSize.Width, settings.figureSize.Height,
-                GetPlottables().Count, GetTotalPoints());
-        }
-
-        public int GetTotalPoints() => GetPlottables().Select(x => x.GetPointCount()).Sum();
+        public override string ToString() =>
+            $"ScottPlot ({settings.Width}x{settings.Height}) " +
+            $"with {settings.Plottables.Count:n0} plottables";
 
         /// <summary>
-        /// Return a new Plot with all the same Plottables (and some of the styles) of this one
+        /// ScottPlot version in the format "1.2.3" (or "1.2.3-beta" for pre-releases)
         /// </summary>
-        public Plot Copy()
+        public static string Version
         {
-            Plot plt2 = new Plot(settings.figureSize.Width, settings.figureSize.Height);
-            var settings2 = plt2.GetSettings(false);
-            settings2.plottables.AddRange(settings.plottables);
-
-            // TODO: add a Copy() method to the settings module, or perhaps Update(existingSettings).
-
-            // copy over only the most relevant styles
-            plt2.Title(settings.title.text);
-            plt2.XLabel(settings.xLabel.text);
-            plt2.YLabel(settings.yLabel.text);
-
-            plt2.TightenLayout();
-            plt2.AxisAuto();
-            return plt2;
-        }
-
-        public void Resize(int? width = null, int? height = null)
-        {
-            if (width == null)
-                width = settings.figureSize.Width;
-            if (height == null)
-                height = settings.figureSize.Height;
-
-            if (width < 1)
-                width = 1;
-            if (height < 1)
-                height = 1;
-
-            settings.Resize((int)width, (int)height);
-            InitializeBitmaps();
-        }
-
-        private void InitializeBitmaps()
-        {
-            settings.bmpFigure = null;
-            settings.gfxFigure = null;
-            settings.bmpData = null;
-            settings.gfxData = null;
-
-            if (settings.figureSize.Width > 0 && settings.figureSize.Height > 0)
+            get
             {
-                settings.bmpFigure = new Bitmap(settings.figureSize.Width, settings.figureSize.Height, PixelFormat.Format32bppPArgb);
-                settings.gfxFigure = Graphics.FromImage(settings.bmpFigure);
-            }
-
-            if (settings.dataSize.Width > 0 && settings.dataSize.Height > 0)
-            {
-                settings.bmpData = new Bitmap(settings.dataSize.Width, settings.dataSize.Height, PixelFormat.Format32bppPArgb);
-                settings.gfxData = Graphics.FromImage(settings.bmpData);
+                Version v = typeof(Plot).Assembly.GetName().Version;
+                string versionString = $"{v.Major}.{v.Minor}.{v.Build}-beta";
+                return versionString;
             }
         }
 
-        private void RenderBitmap()
+        #region add, clear, and remove plottables
+
+        /// <summary>
+        /// Add a plottable to the plot
+        /// </summary>
+        public void Add(IPlottable plottable) => settings.Plottables.Add(plottable);
+
+        /// <summary>
+        /// Clear all plottables
+        /// </summary>
+        public void Clear()
         {
-            if (!settings.axes.hasBeenSet)
-                settings.AxisAuto();
-            else
-                settings.axes.ApplyBounds();
-
-            if (!settings.layout.tighteningOccurred)
-            {
-                // ticks must be populated before the layout can be tightened
-                Renderer.FigureTicks(settings);
-                TightenLayout();
-                // only after the layout is tightened can the ticks be properly decided
-            }
-
-            settings.Benchmark.Start();
-            if (settings.gfxFigure != null)
-            {
-                settings.gfxFigure.SmoothingMode = settings.misc.antiAliasFigure ? SmoothingMode.AntiAlias : SmoothingMode.None;
-                settings.gfxFigure.TextRenderingHint = settings.misc.antiAliasFigure ? TextRenderingHint.AntiAliasGridFit : TextRenderingHint.SingleBitPerPixelGridFit;
-                settings.FigureBackground.Render(settings);
-                Renderer.FigureLabels(settings);
-                Renderer.FigureTicks(settings);
-                Renderer.FigureFrames(settings);
-            }
-
-            if (settings.gfxData != null)
-            {
-                settings.gfxData.SmoothingMode = settings.misc.antiAliasData ? SmoothingMode.AntiAlias : SmoothingMode.None;
-                settings.gfxData.TextRenderingHint = settings.misc.antiAliasData ? TextRenderingHint.AntiAliasGridFit : TextRenderingHint.SingleBitPerPixelGridFit;
-                settings.DataBackground.Render(settings);
-                settings.HorizontalGridLines.Render(settings);
-                settings.VerticalGridLines.Render(settings);
-                if (DiagnosticMode)
-                {
-                    new Diagnostic.DiagnosticDataChecker().CheckPlottables(settings.plottables);
-                }
-                Renderer.DataPlottables(settings);
-                Renderer.MouseZoomRectangle(settings);
-                Renderer.PlaceDataOntoFigure(settings);
-                settings.Legend.Render(settings);
-            }
-            settings.Benchmark.Stop();
-            settings.Benchmark.UpdateMessage(settings.plottables.Count, settings.GetTotalPointCount());
-            settings.Benchmark.Render(settings);
+            settings.Plottables.Clear();
+            settings.ResetAxisLimits();
         }
 
-        public Bitmap GetBitmap(bool renderFirst = true, bool lowQuality = false)
+        /// <summary>
+        /// Remove all plottables of the given type
+        /// </summary>
+        public void Clear(Type plottableType)
         {
-            if (lowQuality)
-            {
-                bool currentAAData = settings.misc.antiAliasData; // save currently using AA setting
-                settings.misc.antiAliasData = false; // disable AA for render
-                if (renderFirst)
-                    RenderBitmap();
-                settings.misc.antiAliasData = currentAAData; // restore saved AA setting
-            }
-            else
-            {
-                if (renderFirst)
-                    RenderBitmap();
-            }
-            return settings.bmpFigure;
+            settings.Plottables.RemoveAll(x => x.GetType() == plottableType);
+
+            if (settings.Plottables.Count == 0)
+                settings.ResetAxisLimits();
         }
 
-        public void SaveFig(string filePath, bool renderFirst = true)
+        /// <summary>
+        /// Remove a specific plottable
+        /// </summary>
+        public void Remove(IPlottable plottable)
         {
-            if (renderFirst)
-                RenderBitmap();
+            settings.Plottables.Remove(plottable);
 
-            if (settings.figureSize.Width == 1 || settings.figureSize.Height == 1)
-                throw new Exception("The figure has not yet been sized (it is 1px by 1px). Resize the figure and try to save again.");
-
-            filePath = System.IO.Path.GetFullPath(filePath);
-            string fileFolder = System.IO.Path.GetDirectoryName(filePath);
-            if (!System.IO.Directory.Exists(fileFolder))
-                throw new Exception($"ERROR: folder does not exist: {fileFolder}");
-
-            ImageFormat imageFormat;
-            string extension = System.IO.Path.GetExtension(filePath).ToUpper();
-            if (extension == ".JPG" || extension == ".JPEG")
-                imageFormat = ImageFormat.Jpeg; // TODO: use jpgEncoder to set custom compression level
-            else if (extension == ".PNG")
-                imageFormat = ImageFormat.Png;
-            else if (extension == ".TIF" || extension == ".TIFF")
-                imageFormat = ImageFormat.Tiff;
-            else if (extension == ".BMP")
-                imageFormat = ImageFormat.Bmp;
-            else
-                throw new NotImplementedException("Extension not supported: " + extension);
-
-            settings.bmpFigure.Save(filePath, imageFormat);
+            if (settings.Plottables.Count == 0)
+                settings.ResetAxisLimits();
         }
 
-        public void Add(Plottable plottable)
-        {
-            settings.plottables.Add(plottable);
-        }
+        /// <summary>
+        /// Return a copy of the list of plottables
+        /// </summary>
+        /// <returns></returns>
+        public IPlottable[] GetPlottables() => settings.Plottables.ToArray();
 
-        public List<Plottable> GetPlottables()
-        {
-            return settings.plottables;
-        }
+        /// <summary>
+        /// Return a copy of the list of draggable plottables
+        /// </summary>
+        /// <returns></returns>
+        public IDraggable[] GetDraggables() => settings.Plottables.Where(x => x is IDraggable).Select(x => (IDraggable)x).ToArray();
 
-        public List<IDraggable> GetDraggables()
-        {
-            List<IDraggable> draggables = new List<IDraggable>();
-
-            foreach (Plottable plottable in GetPlottables())
-                if (plottable is IDraggable draggable)
-                    draggables.Add(draggable);
-
-            return draggables;
-        }
-
+        /// <summary>
+        /// Return the draggable plottable under the mouse cursor (or null if there isn't one)
+        /// </summary>
         public IDraggable GetDraggableUnderMouse(double pixelX, double pixelY, int snapDistancePixels = 5)
         {
-            double snapWidth = GetSettings(false).xAxisUnitsPerPixel * snapDistancePixels;
-            double snapHeight = GetSettings(false).yAxisUnitsPerPixel * snapDistancePixels;
+            double snapWidth = GetSettings(false).XAxis.Dims.UnitsPerPx * snapDistancePixels;
+            double snapHeight = GetSettings(false).YAxis.Dims.UnitsPerPx * snapDistancePixels;
 
             foreach (IDraggable draggable in GetDraggables())
-                if (draggable.IsUnderMouse(CoordinateFromPixelX(pixelX), CoordinateFromPixelY(pixelY), snapWidth, snapHeight))
+                if (draggable.IsUnderMouse(GetCoordinateX((float)pixelX), GetCoordinateY((float)pixelY), snapWidth, snapHeight))
                     if (draggable.DragEnabled)
                         return draggable;
 
             return null;
         }
 
+        #endregion
+
+        #region plottable validation
+
+        /// <summary>
+        /// Throw an exception if any plottable contains an invalid state. Deep validation is more thorough but slower.
+        /// </summary>
+        public void Validate(bool deep = true)
+        {
+            foreach (var plottable in settings.Plottables)
+                plottable.ValidateData(deep);
+        }
+
+        #endregion
+
+        #region plot settings and styling
+
+        /// <summary>
+        /// Get access to the plot settings module (not exposed by default because its internal API changes frequently)
+        /// </summary>
         public Settings GetSettings(bool showWarning = true)
         {
             if (showWarning)
-                Debug.WriteLine("WARNING: GetSettings() is only for development and testing. Be aware its class structure changes frequently!");
-
+                Debug.WriteLine("WARNING: GetSettings() is only for development and testing. " +
+                                "Be aware its class structure changes frequently!");
             return settings;
         }
+
+        /// <summary>
+        /// Set the default size for new renders
+        /// </summary>
+        public void SetSize(float width, float height) => settings.Resize(width, height);
+
+        /// <summary>
+        /// Return a new color from the Pallette based on the number of plottables already in the plot.
+        /// Use this to ensure every plottable gets a unique color.
+        /// </summary>
+        public Color GetNextColor(double alpha = 1) => Color.FromArgb((byte)(alpha * 255), settings.GetNextColor());
+
+        /// <summary>
+        /// Change the default color palette for new plottables
+        /// </summary>
+        public void Colorset(Drawing.Palette colorset) => settings.PlottablePalette = colorset;
+
+        /// <summary>
+        /// Set colors of all plot components using pre-defined styles
+        /// </summary>
+        public void Style(Style style) => StyleTools.SetStyle(this, style);
+
+        /// <summary>
+        /// Set the color of specific plot components
+        /// </summary>
+        public void Style(
+            Color? figureBackground = null,
+            Color? dataBackground = null,
+            Color? grid = null,
+            Color? tick = null,
+            Color? axisLabel = null,
+            Color? titleLabel = null)
+        {
+            settings.FigureBackground.Color = figureBackground ?? settings.FigureBackground.Color;
+            settings.DataBackground.Color = dataBackground ?? settings.DataBackground.Color;
+
+            foreach (var axis in settings.Axes)
+            {
+                axis.Label(color: axisLabel);
+                axis.TickLabelStyle(color: tick);
+                axis.MajorGrid(color: grid);
+                axis.MinorGrid(color: grid);
+                if (tick.HasValue)
+                    axis.TickMarkColor(color: tick.Value);
+                axis.Line(color: tick);
+            }
+
+            XAxis2.TickLabelStyle(color: titleLabel);
+        }
+
+        #endregion
+
+        #region renderable customization
+
+        /// <summary>
+        /// Display render benchmark information on the plot
+        /// </summary>
+        public void Benchmark(bool enable = true) => settings.BenchmarkMessage.IsVisible = enable;
+        public void BenchmarkToggle() => settings.BenchmarkMessage.IsVisible = !settings.BenchmarkMessage.IsVisible;
+
+        /// <summary>
+        /// Set legend visibility and location. Save the returned object for additional customizations.
+        /// </summary>
+        public Renderable.Legend Legend(bool enable = true, Alignment location = Alignment.LowerRight)
+        {
+            settings.CornerLegend.IsVisible = enable;
+            settings.CornerLegend.Location = location;
+            return settings.CornerLegend;
+        }
+
+        #endregion
+
+        #region copy
+
+        /// <summary>
+        /// Return a new Plot with all the same Plottables (and some of the styles) of this one.
+        /// This is called when you right-click a plot in a control and hit "open in new window".
+        /// </summary>
+        public Plot Copy()
+        {
+            Settings oldSettings = settings;
+            Plot oldPlot = this;
+
+            Plot newPlot = new Plot(oldSettings.Width, oldSettings.Height);
+
+            foreach (IPlottable oldPlottable in oldPlot.GetPlottables())
+                newPlot.Add(oldPlottable);
+            newPlot.AxisAuto();
+
+            newPlot.XLabel(oldSettings.XAxis.Label());
+            newPlot.YLabel(oldSettings.YAxis.Label());
+            newPlot.Title(oldSettings.XAxis2.Label());
+
+            return newPlot;
+        }
+
+        #endregion
     }
 }

@@ -1,4 +1,4 @@
-﻿using ScottPlot.Config;
+﻿using ScottPlot.Ticks;
 using ScottPlot.Drawing;
 using System;
 using System.Collections.Generic;
@@ -6,16 +6,19 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Text;
+using ScottPlot.Plottable;
+using System.Linq;
+using System.Diagnostics;
 
 namespace ScottPlot.Renderable
 {
     public class Legend : IRenderable
     {
-        public Direction Location = Direction.SE;
+        public Alignment Location = Alignment.LowerRight;
         public bool FixedLineWidth = false;
         public bool ReverseOrder = false;
         public bool AntiAlias = true;
-        public bool Visible = false;
+        public bool IsVisible { get; set; } = false;
 
         public Color FillColor = Color.White;
         public Color OutlineColor = Color.Black;
@@ -23,58 +26,49 @@ namespace ScottPlot.Renderable
         public float ShadowOffsetX = 2;
         public float ShadowOffsetY = 2;
 
-        private string _fontName = Fonts.GetDefaultFontName();
-        public string FontName { get { return _fontName; } set { _fontName = Fonts.GetValidFontName(FontName); } }
-        public float FontSize = 14;
-        public Color FontColor = Color.Black;
-        public bool FontBold = false;
-        private FontStyle FontStyle { get { return FontBold ? FontStyle.Bold : FontStyle.Regular; } }
+        public Drawing.Font Font = new Drawing.Font();
+        public string FontName { set { Font.Name = value; } }
+        public float FontSize { set { Font.Size = value; } }
+        public Color FontColor { set { Font.Color = value; } }
+        public bool FontBold { set { Font.Bold = value; } }
 
         public float Padding = 5;
-        private float symbolWidth { get { return 40 * FontSize / 12; } }
-        private float symbolPad { get { return FontSize / 3; } }
-        private float markerWidth { get { return FontSize / 2; } }
+        private float SymbolWidth { get { return 40 * Font.Size / 12; } }
+        private float SymbolPad { get { return Font.Size / 3; } }
+        private float MarkerWidth { get { return Font.Size / 2; } }
 
-        public void Render(Settings settings)
+        public void Render(PlotDimensions dims, Bitmap bmp, bool lowQuality = false)
         {
-            if (Visible is false)
+            if (IsVisible is false || LegendItems is null || LegendItems.Length == 0)
                 return;
 
-            using (var gfx = Graphics.FromImage(settings.bmpFigure))
-            using (var font = new Font(FontName, FontSize, FontStyle, GraphicsUnit.Pixel))
+            using (var gfx = GDI.Graphics(bmp, lowQuality))
+            using (var font = GDI.Font(Font))
             {
-                var items = GetLegendItems(settings);
-                if (items.Length == 0)
-                    return;
-
-                var (maxLabelWidth, maxLabelHeight, width, height) = GetDimensions(gfx, items, font);
-                var (x, y) = GetLocationPx(settings, width, height);
-                RenderOnBitmap(gfx, items, font, x, y, width, height, maxLabelHeight);
+                var (maxLabelWidth, maxLabelHeight, width, height) = GetDimensions(gfx, LegendItems, font);
+                var (x, y) = GetLocationPx(dims, width, height);
+                RenderOnBitmap(gfx, LegendItems, font, x, y, width, height, maxLabelHeight);
             }
         }
 
-        public Bitmap GetBitmap(Settings settings)
+        public Bitmap GetBitmap()
         {
             using (var bmpTemp = new Bitmap(1, 1))
-            using (var gfxTemp = Graphics.FromImage(bmpTemp))
-            using (var font = new Font(FontName, FontSize, FontStyle, GraphicsUnit.Pixel))
+            using (var gfxTemp = GDI.Graphics(bmpTemp, true))
+            using (var font = GDI.Font(Font))
             {
-                var items = GetLegendItems(settings);
-                if (items.Length == 0)
-                    return null;
-
-                var (maxLabelWidth, maxLabelHeight, width, height) = GetDimensions(gfxTemp, items, font);
+                var (maxLabelWidth, maxLabelHeight, width, height) = GetDimensions(gfxTemp, LegendItems, font);
                 Bitmap bmp = new Bitmap((int)width, (int)height, PixelFormat.Format32bppPArgb);
 
                 using (var gfx = Graphics.FromImage(bmp))
-                    RenderOnBitmap(gfx, items, font, 0, 0, width, height, maxLabelHeight);
+                    RenderOnBitmap(gfx, LegendItems, font, 0, 0, width, height, maxLabelHeight);
 
                 return bmp;
             }
         }
 
         private (float maxLabelWidth, float maxLabelHeight, float width, float height)
-            GetDimensions(Graphics gfx, LegendItem[] items, Font font)
+            GetDimensions(Graphics gfx, LegendItem[] items, System.Drawing.Font font)
         {
             // determine maximum label size and use it to define legend size
             float maxLabelWidth = 0;
@@ -86,19 +80,19 @@ namespace ScottPlot.Renderable
                 maxLabelHeight = Math.Max(maxLabelHeight, labelSize.Height);
             }
 
-            float width = symbolWidth + maxLabelWidth + symbolPad;
+            float width = SymbolWidth + maxLabelWidth + SymbolPad;
             float height = maxLabelHeight * items.Length;
 
             return (maxLabelWidth, maxLabelHeight, width, height);
         }
 
-        private void RenderOnBitmap(Graphics gfx, LegendItem[] items, Font font,
+        private void RenderOnBitmap(Graphics gfx, LegendItem[] items, System.Drawing.Font font,
             float locationX, float locationY, float width, float height, float maxLabelHeight,
-            bool shadow = true, bool fill = true, bool outline = true)
+            bool shadow = true, bool outline = true)
         {
             using (var fillBrush = new SolidBrush(FillColor))
             using (var shadowBrush = new SolidBrush(ShadowColor))
-            using (var textBrush = new SolidBrush(FontColor))
+            using (var textBrush = new SolidBrush(Font.Color))
             using (var outlinePen = new Pen(OutlineColor))
             {
                 if (AntiAlias)
@@ -124,14 +118,14 @@ namespace ScottPlot.Renderable
                     float verticalOffset = i * maxLabelHeight;
 
                     // draw text
-                    gfx.DrawString(item.label, font, textBrush, locationX + symbolWidth, locationY + verticalOffset);
+                    gfx.DrawString(item.label, font, textBrush, locationX + SymbolWidth, locationY + verticalOffset);
 
                     // prepare values for drawing a line
                     outlinePen.Color = item.color;
                     outlinePen.Width = 1;
                     float lineY = locationY + verticalOffset + maxLabelHeight / 2;
-                    float lineX1 = locationX + symbolPad;
-                    float lineX2 = lineX1 + symbolWidth - symbolPad * 2;
+                    float lineX1 = locationX + SymbolPad;
+                    float lineX2 = lineX1 + SymbolWidth - SymbolPad * 2;
 
                     // prepare values for drawing a rectangle
                     PointF rectOrigin = new PointF(lineX1, (float)(lineY - item.lineWidth / 2));
@@ -141,7 +135,7 @@ namespace ScottPlot.Renderable
                     if (item.IsRectangle)
                     {
                         // draw a rectangle
-                        using (var legendItemFillBrush = GDI.HatchBrush(item.hatchStyle, item.color, item.hatchColor))
+                        using (var legendItemFillBrush = GDI.Brush(item.color, item.hatchColor, item.hatchStyle))
                         using (var legendItemOutlinePen = new Pen(item.borderColor, item.borderWith))
                         {
                             gfx.FillRectangle(legendItemFillBrush, rect);
@@ -158,63 +152,53 @@ namespace ScottPlot.Renderable
                         float lineXcenter = (lineX1 + lineX2) / 2;
                         PointF markerPoint = new PointF(lineXcenter, lineY);
                         if ((item.markerShape != MarkerShape.none) && (item.markerSize > 0))
-                            MarkerTools.DrawMarker(gfx, markerPoint, item.markerShape, markerWidth, item.color);
+                            MarkerTools.DrawMarker(gfx, markerPoint, item.markerShape, MarkerWidth, item.color);
                     }
                 }
             }
         }
 
-        public LegendItem[] GetLegendItems(Settings settings)
+        private LegendItem[] LegendItems;
+        public void UpdateLegendItems(IPlottable[] renderables)
         {
-            var items = new List<LegendItem>();
-
-            foreach (Plottable plottable in settings.plottables)
-            {
-                var legendItems = plottable.GetLegendItems();
-
-                if (legendItems is null)
-                    continue;
-
-                foreach (var plottableItem in legendItems)
-                    if (plottableItem.label != null)
-                        items.Add(plottableItem);
-            }
-
+            LegendItems = renderables.Where(x => x.GetLegendItems() != null)
+                                     .Where(x => x.IsVisible)
+                                     .SelectMany(x => x.GetLegendItems())
+                                     .Where(x => !string.IsNullOrWhiteSpace(x.label))
+                                     .ToArray();
             if (ReverseOrder)
-                items.Reverse();
-
-            return items.ToArray();
+                Array.Reverse(LegendItems);
         }
 
-        private (float x, float y) GetLocationPx(Settings settings, float width, float height)
+        private (float x, float y) GetLocationPx(PlotDimensions dims, float width, float height)
         {
-            float leftX = settings.dataOrigin.X + Padding;
-            float rightX = settings.dataOrigin.X + settings.dataSize.Width - Padding - width;
-            float centerX = settings.dataOrigin.X + settings.dataSize.Width / 2 - width / 2;
+            float leftX = dims.DataOffsetX + Padding;
+            float rightX = dims.DataOffsetX + dims.DataWidth - Padding - width;
+            float centerX = dims.DataOffsetX + dims.DataWidth / 2 - width / 2;
 
-            float topY = settings.dataOrigin.Y + Padding;
-            float bottomY = settings.dataOrigin.Y + settings.dataSize.Height - Padding - height;
-            float centerY = settings.dataOrigin.Y + settings.dataSize.Height / 2 - height / 2;
+            float topY = dims.DataOffsetY + Padding;
+            float bottomY = dims.DataOffsetY + dims.DataHeight - Padding - height;
+            float centerY = dims.DataOffsetY + dims.DataHeight / 2 - height / 2;
 
             switch (Location)
             {
-                case Direction.NW:
+                case Alignment.UpperLeft:
                     return (leftX, topY);
-                case Direction.N:
+                case Alignment.UpperCenter:
                     return (centerX, topY);
-                case Direction.NE:
+                case Alignment.UpperRight:
                     return (rightX, topY);
-                case Direction.E:
+                case Alignment.MiddleRight:
                     return (rightX, centerY);
-                case Direction.SE:
+                case Alignment.LowerRight:
                     return (rightX, bottomY);
-                case Direction.S:
+                case Alignment.LowerCenter:
                     return (centerX, bottomY);
-                case Direction.SW:
+                case Alignment.LowerLeft:
                     return (leftX, bottomY);
-                case Direction.W:
+                case Alignment.MiddleLeft:
                     return (leftX, centerY);
-                case Direction.C:
+                case Alignment.MiddleCenter:
                     return (centerX, centerY);
                 default:
                     throw new NotImplementedException();
